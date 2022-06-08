@@ -21,6 +21,8 @@ from commons.process_mols import read_molecule, get_lig_graph_revised, \
 from train import load_model
 
 from datasets.pdbbind import PDBBind
+from datasets.litpcba import LitPCBA
+from datasets.fepbenchmark import FEPBenchmark
 
 from commons.utils import seed_all, read_strings_from_txt
 
@@ -196,7 +198,7 @@ def inference(args, tune_args=None):
         rmsds = np.array(rmsds)
         centroid_distsH = np.array(centroid_distsH)
 
-        print('EquiBind-U with hydrogens inclduded in the loss')
+        print('EquiBind-U with hydrogens included in the loss')
         print('mean rmsd: ', rmsds.mean().__round__(2), ' pm ', rmsds.std().__round__(2))
         print('rmsd precentiles: ', np.percentile(rmsds, [25, 50, 75]).round(2))
         print(f'rmsds below 2: {(100 * (rmsds < 2).sum() / len(rmsds)).__round__(2)}%')
@@ -212,6 +214,7 @@ def inference(args, tune_args=None):
                 f'{data.processed_dir}/lig_graphs_rdkit_coords.pt')
             kabsch_rmsds = []
             rmsds = []
+            rmsds_above_75 = []
             centroid_distances = []
             kabsch_rmsds_optimized = []
             rmsds_optimized = []
@@ -220,6 +223,7 @@ def inference(args, tune_args=None):
                     zip(results['predictions'], results['targets'], results['lig_keypts'], results['rec_keypts'],
                         results['names']))):
                 lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.sdf'), sanitize=True)
+                # lig = read_molecule(os.path.join('data/FEPBenchmark/', name), sanitize=True)
                 if lig == None:  # read mol2 file if sdf file cannot be sanitized
                     lig = read_molecule(os.path.join('data/PDBBind/', name, f'{name}_ligand.mol2'), sanitize=True)
 
@@ -269,6 +273,8 @@ def inference(args, tune_args=None):
                 centroid_distances.append(centroid_distance)
                 kabsch_rmsds_optimized.append(kabsch_rmsd_optimized)
                 rmsds_optimized.append(rmsdval_optimized)
+                if (rmsdval_optimized > 11):
+                    rmsds_above_75.append(name)
                 centroid_distances_optimized.append(centroid_distance_optimized)
             kabsch_rmsds = np.array(kabsch_rmsds)
             rmsdvals = np.array(rmsds)
@@ -300,6 +306,8 @@ def inference(args, tune_args=None):
             print(f'mean kabsch RMSD: ', kabsch_rmsds_optimized.mean().__round__(2), ' pm ',
                   kabsch_rmsds_optimized.std().__round__(2))
             print('kabsch RMSD percentiles: ', np.percentile(kabsch_rmsds_optimized, [25, 50, 75]).round(2))
+
+            print(rmsds_above_75)
 
 
 def inference_from_files(args):

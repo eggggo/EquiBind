@@ -66,6 +66,7 @@ class PDBBind(Dataset):
                  random_rec_atom_subgraph_radius= 10,
                  geometry_regularization_ring= False,
                  num_confs=10,
+                 batch_size=500,
                  transform=None, **kwargs):
         # subset name is either 'pdbbind_filtered' or 'casf_test'
         self.chain_radius = chain_radius
@@ -108,12 +109,13 @@ class PDBBind(Dataset):
         self.multiple_rdkit_conformers = multiple_rdkit_conformers
         self.num_confs = num_confs
         self.conformer_id = 0
+        self.batch_size = batch_size
         if self.lig_predictions_name ==None:
             self.rec_subgraph_path = f'rec_subgraphs_cutoff{self.subgraph_cutoff}_radius{self.subgraph_radius}_maxNeigh{self.subgraph_max_neigbor}.pt'
         else:
             self.rec_subgraph_path = f'rec_subgraphs_cutoff{self.subgraph_cutoff}_radius{self.subgraph_radius}_maxNeigh{self.subgraph_max_neigbor}_{self.lig_predictions_name}'
 
-        self.processed_dir = f'data/processed/size{self.dataset_size}_INDEX{os.path.splitext(os.path.basename(self.complex_names_path))[0]}_Hpolar{int(self.only_polar_hydrogens)}_H{int(not self.remove_h)}_BSPprot{int(self.bsp_proteins)}_BSPlig{int(self.bsp_ligands)}_surface{int(self.use_rec_atoms)}_pocketRad{self.pocket_cutoff}_ligRad{self.lig_graph_radius}_recRad{self.rec_graph_radius}_recMax{self.c_alpha_max_neighbors}_ligMax{self.lig_max_neighbors}_chain{self.chain_radius}_POCKET{self.pocket_mode}'
+        self.processed_dir = f'data/processed/size{self.dataset_size}_INDEX{os.path.splitext(os.path.basename(self.complex_names_path))[0]}_Hpolar{int(self.only_polar_hydrogens)}_H{int(not self.remove_h)}_BSPprot{int(self.bsp_proteins)}_BSPlig{int(self.bsp_ligands)}_surface{int(self.use_rec_atoms)}_pocketRad{self.pocket_cutoff}_ligRad{self.lig_graph_radius}_recRad{self.rec_graph_radius}_recMax{self.c_alpha_max_neighbors}_ligMax{self.lig_max_neighbors}_chain{self.chain_radius}_POCKET{self.pocket_mode}_PDB'
         print(f'using processed directory: {self.processed_dir}')
         if self.use_rdkit_coords:
             self.lig_graph_path = 'lig_graphs_rdkit_coords.pt'
@@ -126,25 +128,25 @@ class PDBBind(Dataset):
         if (not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization.pt')) and self.geometry_regularization) or (not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt')) and self.geometry_regularization_ring) or not os.path.exists(os.path.join(self.processed_dir, 'rec_graphs.pt')) or not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')) or not os.path.exists(os.path.join(self.processed_dir, self.lig_graph_path)) or (not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)) and self.rec_subgraph) or (not os.path.exists(os.path.join(self.processed_dir, 'lig_structure_graphs.pt')) and self.lig_structure_graph):
             self.process()
         log('loading data into memory')
-        coords_dict = torch.load(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt'))
+        coords_dict = torch.load(os.path.join(self.processed_dir, 'pocket_and_rec_coords_0.pt'))
         self.pockets_coords = coords_dict['pockets_coords']
-        self.lig_graphs, _ = load_graphs(os.path.join(self.processed_dir, self.lig_graph_path))
+        self.lig_graphs, _ = load_graphs(os.path.join(self.processed_dir, f'{self.lig_graph_path}_0'))
         if self.multiple_rdkit_conformers:
             self.lig_graphs = [self.lig_graphs[i:i + self.num_confs] for i in range(0, len(self.lig_graphs), self.num_confs)]
-        self.rec_graphs, _ = load_graphs(os.path.join(self.processed_dir, 'rec_graphs.pt'))
+        self.rec_graphs, _ = load_graphs(os.path.join(self.processed_dir, 'rec_graphs_0.pt'))
         if self.rec_subgraph:
-            self.rec_atom_subgraphs, _ = load_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path))
+            self.rec_atom_subgraphs, _ = load_graphs(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_0'))
         if self.lig_structure_graph:
-            self.lig_structure_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'lig_structure_graphs.pt'))
-            masks_angles = torch.load(os.path.join(self.processed_dir, 'torsion_masks_and_angles.pt'))
+            self.lig_structure_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'lig_structure_graphs_0.pt'))
+            masks_angles = torch.load(os.path.join(self.processed_dir, 'torsion_masks_and_angles_0.pt'))
             self.angles = masks_angles['angles']
             self.masks = masks_angles['masks']
         if self.geometry_regularization:
-            print(os.path.join(self.processed_dir, 'geometry_regularization.pt'))
-            self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'geometry_regularization.pt'))
+            print(os.path.join(self.processed_dir, 'geometry_regularization_0.pt'))
+            self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'geometry_regularization_0.pt'))
         if self.geometry_regularization_ring:
-            print(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'))
-            self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'))
+            print(os.path.join(self.processed_dir, 'geometry_regularization_ring_0.pt'))
+            self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, 'geometry_regularization_ring_0.pt'))
         self.complex_names = coords_dict['complex_names']
         assert len(self.lig_graphs) == len(self.rec_graphs)
         log('finish loading data into memory')
@@ -155,6 +157,34 @@ class PDBBind(Dataset):
         return len(self.lig_graphs)
 
     def __getitem__(self, idx):
+        # check if the item we are looking for is in memory, if not load that batch in to replace prev one in memory
+        # 500 items per batch
+        if idx / self.batch_size != self.curr_batch:
+            self.curr_batch = idx / self.batch_size
+            log('loading data into memory')
+            coords_dict = torch.load(os.path.join(self.processed_dir, f'pocket_and_rec_coords_{self.curr_batch}.pt'))
+            self.pockets_coords = coords_dict['pockets_coords']
+            self.lig_graphs, _ = load_graphs(os.path.join(self.processed_dir, f'{self.lig_graph_path}_{self.curr_batch}'))
+            if self.multiple_rdkit_conformers:
+                self.lig_graphs = [self.lig_graphs[i:i + self.num_confs] for i in range(0, len(self.lig_graphs), self.num_confs)]
+            self.rec_graphs, _ = load_graphs(os.path.join(self.processed_dir, f'rec_graphs_{self.curr_batch}.pt'))
+            if self.rec_subgraph:
+                self.rec_atom_subgraphs, _ = load_graphs(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_{self.curr_batch}'))
+            if self.lig_structure_graph:
+                self.lig_structure_graphs, _ =  load_graphs(os.path.join(self.processed_dir, f'lig_structure_graphs_{self.curr_batch}.pt'))
+                masks_angles = torch.load(os.path.join(self.processed_dir, f'torsion_masks_and_angles_{self.curr_batch}.pt'))
+                self.angles = masks_angles['angles']
+                self.masks = masks_angles['masks']
+            if self.geometry_regularization:
+                print(os.path.join(self.processed_dir, f'geometry_regularization_{self.curr_batch}.pt'))
+                self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, f'geometry_regularization_{self.curr_batch}.pt'))
+            if self.geometry_regularization_ring:
+                print(os.path.join(self.processed_dir, f'geometry_regularization_ring_{self.curr_batch}.pt'))
+                self.geometry_graphs, _ =  load_graphs(os.path.join(self.processed_dir, f'geometry_regularization_ring_{self.curr_batch}.pt'))
+            self.complex_names = coords_dict['complex_names']
+            assert len(self.lig_graphs) == len(self.rec_graphs)
+            log('finish loading data into memory')
+            self.cache = {}
         pocket_coords = self.pockets_coords[idx]
         if self.lig_structure_graph:
             lig_graph = deepcopy(self.lig_structure_graphs[idx])
@@ -207,7 +237,7 @@ class PDBBind(Dataset):
 
     def process(self):
         log(f'Processing complexes from [{self.complex_names_path}] and saving it to [{self.processed_dir}]')
-
+        print(self.complex_names_path)
         complex_names = read_strings_from_txt(self.complex_names_path)
         if self.dataset_size != None:
             complex_names = complex_names[:self.dataset_size]
@@ -247,97 +277,201 @@ class PDBBind(Dataset):
         if not os.path.exists(self.processed_dir):
             os.mkdir(self.processed_dir)
 
-        if not os.path.exists(os.path.join(self.processed_dir, 'rec_graphs.pt')) or not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')) or (not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)) and self.rec_subgraph):
-            log('Get receptors, filter chains, and get its coordinates')
-            receptor_representatives = pmap_multi(get_receptor, zip(rec_paths, ligs), n_jobs=self.n_jobs, cutoff=self.chain_radius, desc='Get receptors')
-            recs, recs_coords, c_alpha_coords, n_coords, c_coords = map(list, zip(*receptor_representatives))
-            # rec coords is a list with n_residues many arrays of shape: [n_atoms_in_residue, 3]
+        # kind of have to batch the rest of this fn since we run out of ram on this first step
+        batch_num = 0
+        start = 0
+        complexes = list(zip(rec_paths, ligs))
+        while start < len(complexes):
+            end = min(start + self.batch_size, len(complexes))
+            log(f'Batch #{batch_num}:')
+            if not os.path.exists(os.path.join(self.processed_dir, f'rec_graphs_{batch_num}.pt')) or not os.path.exists(os.path.join(self.processed_dir, f'pocket_and_rec_coords_{batch_num}.pt')) or (not os.path.exists(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_{batch_num}')) and self.rec_subgraph):
+                log('Get receptors, filter chains, and get its coordinates')
+                receptor_representatives = pmap_multi(get_receptor, complexes[start:end], n_jobs=self.n_jobs, cutoff=self.chain_radius, desc='Get receptors')
+                recs, recs_coords, c_alpha_coords, n_coords, c_coords = map(list, zip(*receptor_representatives))
+                # rec coords is a list with n_residues many arrays of shape: [n_atoms_in_residue, 3]
 
 
-        if not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')):
-            log('Get Pocket Coordinates')
-            pockets_coords = pmap_multi(get_pocket_coords, zip(ligs, recs_coords), n_jobs=self.n_jobs,
-                                        cutoff=self.pocket_cutoff, pocket_mode=self.pocket_mode,
-                                        desc='Get pocket coords')
-            recs_coords_concat = [torch.tensor(np.concatenate(rec_coords, axis=0)) for rec_coords in recs_coords]
-            torch.save({'pockets_coords': pockets_coords,
-                        'all_rec_coords': recs_coords_concat,
-                        # coords of all atoms and not only those included in graph
-                        'complex_names': complex_names,
-                        }, os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt'))
-        else:
-            log('pocket_and_rec_coords.pt already exists. Using those instead of creating new ones.')
-
-        if not os.path.exists(os.path.join(self.processed_dir, 'rec_graphs.pt')):
-            log('Get receptor Graphs')
-            rec_graphs = pmap_multi(get_rec_graph,
-                                    zip(recs, recs_coords, c_alpha_coords, n_coords, c_coords), n_jobs=self.n_jobs,
-                                    use_rec_atoms=self.use_rec_atoms, rec_radius=self.rec_graph_radius,
-                                    surface_max_neighbors=self.surface_max_neighbors,
-                                    surface_graph_cutoff=self.surface_graph_cutoff,
-                                    surface_mesh_cutoff=self.surface_mesh_cutoff,
-                                    c_alpha_max_neighbors=self.c_alpha_max_neighbors,
-                                    desc='Convert receptors to graphs')
-            save_graphs(os.path.join(self.processed_dir, 'rec_graphs.pt'), rec_graphs)
-        else:
-            log('rec_graphs.pt already exists. Using those instead of creating new ones.')
-        log('Done converting to graphs')
-
-        if self.lig_predictions_name != None:
-            ligs_coords = torch.load(os.path.join('data/processed', self.lig_predictions_name))['predictions'][:len(ligs)]
-        else:
-            ligs_coords = [None] * len(ligs)
-        if self.rec_subgraph and not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)):
-            log('Get receptor subgraphs')
-            rec_subgraphs = pmap_multi(get_receptor_atom_subgraph,
-                                    zip(recs, recs_coords, ligs, ligs_coords), n_jobs=self.n_jobs,
-                                    max_neighbor=self.subgraph_max_neigbor, subgraph_radius=self.subgraph_radius,
-                                    graph_cutoff=self.subgraph_cutoff,
-                                    desc='get receptor subgraphs')
-            save_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path), rec_subgraphs)
-        else:
-            log(os.path.join(self.processed_dir, self.rec_subgraph_path), ' already exists. Using those instead of creating new ones.')
-        log('Done creating receptor subgraphs')
-
-        if not os.path.exists(os.path.join(self.processed_dir, self.lig_graph_path)):
-            log('Convert ligands to graphs')
-            if self.multiple_rdkit_conformers:
-                lig_graphs = pmap_multi(get_lig_graph_multiple_conformer, zip(ligs,complex_names), n_jobs=self.n_jobs,
-                                    max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
-                                    radius=self.lig_graph_radius, num_confs=self.num_confs, desc='Convert ligands to graphs')
-                lig_graphs = [item for sublist in lig_graphs for item in sublist]
+            if not os.path.exists(os.path.join(self.processed_dir, f'pocket_and_rec_coords_{batch_num}.pt')):
+                log('Get Pocket Coordinates')
+                pockets_coords = pmap_multi(get_pocket_coords, zip(ligs[start:end], recs_coords), n_jobs=self.n_jobs,
+                                            cutoff=self.pocket_cutoff, pocket_mode=self.pocket_mode,
+                                            desc='Get pocket coords')
+                recs_coords_concat = [torch.tensor(np.concatenate(rec_coords, axis=0)) for rec_coords in recs_coords]
+                torch.save({'pockets_coords': pockets_coords,
+                            'all_rec_coords': recs_coords_concat,
+                            # coords of all atoms and not only those included in graph
+                            'complex_names': complex_names,
+                            }, os.path.join(self.processed_dir, f'pocket_and_rec_coords_{batch_num}.pt'))
             else:
-                lig_graphs = pmap_multi(get_lig_graph_revised, zip(ligs,complex_names), n_jobs=self.n_jobs,
-                                    max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
-                                    radius=self.lig_graph_radius, desc='Convert ligands to graphs')
+                log(f'pocket_and_rec_coords_{batch_num}.pt already exists. Using those instead of creating new ones.')
 
-            save_graphs(os.path.join(self.processed_dir, self.lig_graph_path), lig_graphs)
-        else:
-            log('lig_graphs.pt already exists. Using those instead of creating new ones.')
+            if not os.path.exists(os.path.join(self.processed_dir, f'rec_graphs_{batch_num}.pt')):
+                log('Get receptor Graphs')
+                rec_graphs = pmap_multi(get_rec_graph,
+                                        zip(recs, recs_coords, c_alpha_coords, n_coords, c_coords), n_jobs=self.n_jobs,
+                                        use_rec_atoms=self.use_rec_atoms, rec_radius=self.rec_graph_radius,
+                                        surface_max_neighbors=self.surface_max_neighbors,
+                                        surface_graph_cutoff=self.surface_graph_cutoff,
+                                        surface_mesh_cutoff=self.surface_mesh_cutoff,
+                                        c_alpha_max_neighbors=self.c_alpha_max_neighbors,
+                                        desc='Convert receptors to graphs')
+                save_graphs(os.path.join(self.processed_dir, f'rec_graphs_{batch_num}.pt'), rec_graphs)
+            else:
+                log(f'rec_graphs_{batch_num}.pt already exists. Using those instead of creating new ones.')
+            log('Done converting to graphs')
 
-        if not os.path.exists(os.path.join(self.processed_dir, 'lig_structure_graphs.pt')) and self.lig_structure_graph:
-            log('Convert ligands to graphs')
-            graphs_masks_angles = pmap_multi(get_lig_structure_graph, zip(ligs), n_jobs=self.n_jobs, desc='Get ligand structure graphs with angle information')
-            graphs, masks, angles = map(list, zip(*graphs_masks_angles))
-            torch.save({'masks': masks,
-                        'angles': angles,
-                        }, os.path.join(self.processed_dir, 'torsion_masks_and_angles.pt'))
-            save_graphs(os.path.join(self.processed_dir, 'lig_structure_graphs.pt'), graphs)
-        else:
-            log('lig_structure_graphs.pt already exists or is not needed.')
+            if self.lig_predictions_name != None:
+                ligs_coords = torch.load(os.path.join('data/processed', self.lig_predictions_name))['predictions'][:len(ligs)]
+            else:
+                ligs_coords = [None] * len(ligs)
+            if self.rec_subgraph and not os.path.exists(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_{batch_num}')):
+                log('Get receptor subgraphs')
+                rec_subgraphs = pmap_multi(get_receptor_atom_subgraph,
+                                        zip(recs, recs_coords, ligs[start:end], ligs_coords), n_jobs=self.n_jobs,
+                                        max_neighbor=self.subgraph_max_neigbor, subgraph_radius=self.subgraph_radius,
+                                        graph_cutoff=self.subgraph_cutoff,
+                                        desc='get receptor subgraphs')
+                save_graphs(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_{batch_num}'), rec_subgraphs)
+            else:
+                log(os.path.join(self.processed_dir, f'{self.rec_subgraph_path}_{batch_num}'), ' already exists. Using those instead of creating new ones.')
+            log('Done creating receptor subgraphs')
 
-        if not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization.pt')):
-            log('Convert ligands to geometry graph')
-            geometry_graphs = [get_geometry_graph(lig) for lig in ligs]
-            save_graphs(os.path.join(self.processed_dir, 'geometry_regularization.pt'), geometry_graphs)
-        else:
-            log('geometry_regularization.pt already exists or is not needed.')
+            if not os.path.exists(os.path.join(self.processed_dir, f'{self.lig_graph_path}_{batch_num}')):
+                log('Convert ligands to graphs')
+                if self.multiple_rdkit_conformers:
+                    lig_graphs = pmap_multi(get_lig_graph_multiple_conformer, zip(ligs[start:end],complex_names[start:end]), n_jobs=self.n_jobs,
+                                        max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
+                                        radius=self.lig_graph_radius, num_confs=self.num_confs, desc='Convert ligands to graphs')
+                    lig_graphs = [item for sublist in lig_graphs for item in sublist]
+                else:
+                    lig_graphs = pmap_multi(get_lig_graph_revised, zip(ligs[start:end],complex_names[start:end]), n_jobs=self.n_jobs,
+                                        max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
+                                        radius=self.lig_graph_radius, desc='Convert ligands to graphs')
 
-        if not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt')):
-            log('Convert ligands to geometry graph')
-            geometry_graphs = [get_geometry_graph_ring(lig) for lig in ligs]
-            save_graphs(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'), geometry_graphs)
-        else:
-            log('geometry_regularization.pt already exists or is not needed.')
+                save_graphs(os.path.join(self.processed_dir, f'{self.lig_graph_path}_{batch_num}'), lig_graphs)
+            else:
+                log(f'lig_graphs_{batch_num}.pt already exists. Using those instead of creating new ones.')
 
-        get_reusable_executor().shutdown(wait=True)
+            if not os.path.exists(os.path.join(self.processed_dir, f'lig_structure_graphs_{batch_num}.pt')) and self.lig_structure_graph:
+                log('Convert ligands to graphs')
+                graphs_masks_angles = pmap_multi(get_lig_structure_graph, zip(ligs[start:end]), n_jobs=self.n_jobs, desc='Get ligand structure graphs with angle information')
+                graphs, masks, angles = map(list, zip(*graphs_masks_angles))
+                torch.save({'masks': masks,
+                            'angles': angles,
+                            }, os.path.join(self.processed_dir, 'torsion_masks_and_angles.pt'))
+                save_graphs(os.path.join(self.processed_dir, f'lig_structure_graphs_{batch_num}.pt'), graphs)
+            else:
+                log(f'lig_structure_graphs_{batch_num}.pt already exists or is not needed.')
+
+            if not os.path.exists(os.path.join(self.processed_dir, f'geometry_regularization_{batch_num}.pt')):
+                log('Convert ligands to geometry graph')
+                geometry_graphs = [get_geometry_graph(lig) for lig in ligs[start:end]]
+                save_graphs(os.path.join(self.processed_dir, f'geometry_regularization_{batch_num}.pt'), geometry_graphs)
+            else:
+                log(f'geometry_regularization_{batch_num}.pt already exists or is not needed.')
+
+            if not os.path.exists(os.path.join(self.processed_dir,  f'geometry_regularization_ring_{batch_num}.pt')):
+                log('Convert ligands to geometry graph')
+                geometry_graphs = [get_geometry_graph_ring(lig) for lig in ligs[start:end]]
+                save_graphs(os.path.join(self.processed_dir, f'geometry_regularization_ring_{batch_num}.pt'), geometry_graphs)
+            else:
+                log(f'geometry_regularization_{batch_num}.pt already exists or is not needed.')
+
+            start = end
+            batch_num += 1
+
+            get_reusable_executor().shutdown(wait=True)
+        # if not os.path.exists(os.path.join(self.processed_dir, 'rec_graphs.pt')) or not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')) or (not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)) and self.rec_subgraph):
+        #     log('Get receptors, filter chains, and get its coordinates')
+        #     receptor_representatives = pmap_multi(get_receptor, zip(rec_paths, ligs), n_jobs=self.n_jobs, cutoff=self.chain_radius, desc='Get receptors')
+        #     recs, recs_coords, c_alpha_coords, n_coords, c_coords = map(list, zip(*receptor_representatives))
+        #     # rec coords is a list with n_residues many arrays of shape: [n_atoms_in_residue, 3]
+
+
+        # if not os.path.exists(os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt')):
+        #     log('Get Pocket Coordinates')
+        #     pockets_coords = pmap_multi(get_pocket_coords, zip(ligs, recs_coords), n_jobs=self.n_jobs,
+        #                                 cutoff=self.pocket_cutoff, pocket_mode=self.pocket_mode,
+        #                                 desc='Get pocket coords')
+        #     recs_coords_concat = [torch.tensor(np.concatenate(rec_coords, axis=0)) for rec_coords in recs_coords]
+        #     torch.save({'pockets_coords': pockets_coords,
+        #                 'all_rec_coords': recs_coords_concat,
+        #                 # coords of all atoms and not only those included in graph
+        #                 'complex_names': complex_names,
+        #                 }, os.path.join(self.processed_dir, 'pocket_and_rec_coords.pt'))
+        # else:
+        #     log('pocket_and_rec_coords.pt already exists. Using those instead of creating new ones.')
+
+        # if not os.path.exists(os.path.join(self.processed_dir, 'rec_graphs.pt')):
+        #     log('Get receptor Graphs')
+        #     rec_graphs = pmap_multi(get_rec_graph,
+        #                             zip(recs, recs_coords, c_alpha_coords, n_coords, c_coords), n_jobs=self.n_jobs,
+        #                             use_rec_atoms=self.use_rec_atoms, rec_radius=self.rec_graph_radius,
+        #                             surface_max_neighbors=self.surface_max_neighbors,
+        #                             surface_graph_cutoff=self.surface_graph_cutoff,
+        #                             surface_mesh_cutoff=self.surface_mesh_cutoff,
+        #                             c_alpha_max_neighbors=self.c_alpha_max_neighbors,
+        #                             desc='Convert receptors to graphs')
+        #     save_graphs(os.path.join(self.processed_dir, 'rec_graphs.pt'), rec_graphs)
+        # else:
+        #     log('rec_graphs.pt already exists. Using those instead of creating new ones.')
+        # log('Done converting to graphs')
+
+        # if self.lig_predictions_name != None:
+        #     ligs_coords = torch.load(os.path.join('data/processed', self.lig_predictions_name))['predictions'][:len(ligs)]
+        # else:
+        #     ligs_coords = [None] * len(ligs)
+        # if self.rec_subgraph and not os.path.exists(os.path.join(self.processed_dir, self.rec_subgraph_path)):
+        #     log('Get receptor subgraphs')
+        #     rec_subgraphs = pmap_multi(get_receptor_atom_subgraph,
+        #                             zip(recs, recs_coords, ligs, ligs_coords), n_jobs=self.n_jobs,
+        #                             max_neighbor=self.subgraph_max_neigbor, subgraph_radius=self.subgraph_radius,
+        #                             graph_cutoff=self.subgraph_cutoff,
+        #                             desc='get receptor subgraphs')
+        #     save_graphs(os.path.join(self.processed_dir, self.rec_subgraph_path), rec_subgraphs)
+        # else:
+        #     log(os.path.join(self.processed_dir, self.rec_subgraph_path), ' already exists. Using those instead of creating new ones.')
+        # log('Done creating receptor subgraphs')
+
+        # if not os.path.exists(os.path.join(self.processed_dir, self.lig_graph_path)):
+        #     log('Convert ligands to graphs')
+        #     if self.multiple_rdkit_conformers:
+        #         lig_graphs = pmap_multi(get_lig_graph_multiple_conformer, zip(ligs,complex_names), n_jobs=self.n_jobs,
+        #                             max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
+        #                             radius=self.lig_graph_radius, num_confs=self.num_confs, desc='Convert ligands to graphs')
+        #         lig_graphs = [item for sublist in lig_graphs for item in sublist]
+        #     else:
+        #         lig_graphs = pmap_multi(get_lig_graph_revised, zip(ligs,complex_names), n_jobs=self.n_jobs,
+        #                             max_neighbors=self.lig_max_neighbors, use_rdkit_coords=self.use_rdkit_coords,
+        #                             radius=self.lig_graph_radius, desc='Convert ligands to graphs')
+
+        #     save_graphs(os.path.join(self.processed_dir, self.lig_graph_path), lig_graphs)
+        # else:
+        #     log('lig_graphs.pt already exists. Using those instead of creating new ones.')
+
+        # if not os.path.exists(os.path.join(self.processed_dir, 'lig_structure_graphs.pt')) and self.lig_structure_graph:
+        #     log('Convert ligands to graphs')
+        #     graphs_masks_angles = pmap_multi(get_lig_structure_graph, zip(ligs), n_jobs=self.n_jobs, desc='Get ligand structure graphs with angle information')
+        #     graphs, masks, angles = map(list, zip(*graphs_masks_angles))
+        #     torch.save({'masks': masks,
+        #                 'angles': angles,
+        #                 }, os.path.join(self.processed_dir, 'torsion_masks_and_angles.pt'))
+        #     save_graphs(os.path.join(self.processed_dir, 'lig_structure_graphs.pt'), graphs)
+        # else:
+        #     log('lig_structure_graphs.pt already exists or is not needed.')
+
+        # if not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization.pt')):
+        #     log('Convert ligands to geometry graph')
+        #     geometry_graphs = [get_geometry_graph(lig) for lig in ligs]
+        #     save_graphs(os.path.join(self.processed_dir, 'geometry_regularization.pt'), geometry_graphs)
+        # else:
+        #     log('geometry_regularization.pt already exists or is not needed.')
+
+        # if not os.path.exists(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt')):
+        #     log('Convert ligands to geometry graph')
+        #     geometry_graphs = [get_geometry_graph_ring(lig) for lig in ligs]
+        #     save_graphs(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'), geometry_graphs)
+        # else:
+        #     log('geometry_regularization.pt already exists or is not needed.')
+
+        # get_reusable_executor().shutdown(wait=True)
