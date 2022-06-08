@@ -4,6 +4,7 @@ channels:
   - defaults
   - dglteam
   - pytorch
+  - openeye
 dependencies:
   - python=3.7
   - pytorch 1.10
@@ -23,6 +24,7 @@ dependencies:
   - icecream
   - matplotlib
   - tensorboard
+  - openeye-toolkits
 
 
 
