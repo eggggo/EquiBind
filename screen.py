@@ -46,6 +46,8 @@ import faulthandler
 from openeye import oechem
 from openeye import oedocking
 
+from openbabel import openbabel
+
 faulthandler.enable()
 
 
@@ -59,6 +61,8 @@ def parse_arguments():
     p.add_argument('--run_dirs', type=list, default=[], help='path directory with saved runs')
     p.add_argument('--fine_tune_dirs', type=list, default=[], help='path directory with saved finetuning runs')
     p.add_argument('--ligand_to_screen', type=str, help='path to ligand to screen')
+    p.add_argument('--protein_set', type=str, help='path to list of proteins')
+    p.add_argument('--mode', type=str, help='n for none, q for qvina2, s for smina')
     p.add_argument('--experiment_name', type=str, help='name that will be added to the runs folder output')
     p.add_argument('--logdir', type=str, default='runs', help='tensorboard logdirectory')
     p.add_argument('--num_epochs', type=int, default=2500, help='number of times to iterate through all samples')
@@ -155,8 +159,13 @@ def screen_ligand(args):
     start_lig_coords = lig_graph.ndata['x']
     rescores = []
 
+    #get screening dataset
+    with open(args.protein_set) as file:
+        lines = file.readlines()
+        protein_set = [line.rstrip() for line in lines]
+
     #loop through pdbbind dataset and predict bindings
-    for complex in os.listdir('data/PDBBind'):
+    for complex in protein_set:
         rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
         if (not os.path.exists(rec_path)):
             print(f'Protein at {rec_path} does not exist')
@@ -231,16 +240,43 @@ def screen_ligand(args):
                 all_ligs_coords_corrected.append(coords_pred_optimized)
 
                 if args.output_directory:
-                    if not os.path.exists(f'{args.output_directory}/screen'):
-                        os.makedirs(f'{args.output_directory}/screen')
+                    if not os.path.exists(f'{args.output_directory}/screen/{complex}'):
+                        os.makedirs(f'{args.output_directory}/screen/{complex}')
                     conf = optimized_mol.GetConformer()
                     for i in range(optimized_mol.GetNumAtoms()):
                         x, y, z = coords_pred_optimized[i]
                         conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+                    prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf'
+
                     block_optimized = Chem.MolToMolBlock(optimized_mol)
-                    print(f'Writing prediction to {args.output_directory}/screen/{complex}_lig_equibind_corrected.sdf')
-                    with open(f'{args.output_directory}/screen/{complex}_lig_equibind_corrected.sdf', "w") as newfile:
+                    print(f'Writing prediction to {args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf')
+                    with open(prediction_path, "w") as newfile:
                         newfile.write(block_optimized)
+                    if (args.mode != 'n'):
+                        obConversion  = openbabel.OBConversion()
+                        obConversion.SetInAndOutFormats('sdf', 'pdbqt')
+                        mol = openbabel.OBMol()
+                        obConversion.ReadFile(mol, prediction_path)
+                        pdbqt_file = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected_ad.pdbqt'
+                        obConversion.WriteFile(mol, pdbqt_file)
+                        autodock_out_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.pdbqt'
+
+                        search_mins = np.min(coords_pred_optimized, axis=0)
+                        search_maxes = np.max(coords_pred_optimized, axis=0)
+                        search_dims = np.add(np.divide(np.subtract(search_maxes, search_mins), 2), [5, 5, 5])
+                        search_center = np.add(search_mins, search_dims)
+
+                        #correct with qvina2/smina if mode
+                        if (args.mode == 'q'):
+                            os.system(f'./qvina2.1 --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}')
+                        elif (args.mode == 's'):
+                            os.system(f'./smina.static --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}')
+
+                        obConversion.SetInAndOutFormats('pdbqt', 'sdf')
+                        obConversion.ReadFile(mol, autodock_out_path)
+                        prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.sdf'
+                        obConversion.WriteFile(mol, prediction_path)
+                
                 
                 # rescore docking pose and record
                 # get receptor as graph mol(no receptor data)
@@ -250,7 +286,7 @@ def screen_ligand(args):
                     oechem.OEThrow.Fatal("Unable to read receptor")
                 # get lig as graph mol
                 lig_mol = oechem.OEGraphMol()
-                istream = oechem.oemolistream(f'{args.output_directory}/screen/{complex}_lig_equibind_corrected.sdf')
+                istream = oechem.oemolistream(prediction_path)
                 if not oechem.OEReadMolecule(istream, lig_mol):
                     oechem.OEThrow.Fatal("Unable to read ligand")
                 # find bounding box +-some flexibility around ligand
@@ -265,9 +301,6 @@ def screen_ligand(args):
                 score.Initialize(receptor, bounding_box)
                 rescore = score.ScoreLigand(lig_mol)
                 print(rescore)
-                # arbitrary filtering threshold
-                if rescore < 15:
-                    rescores.append((complex, rescore))
 
             all_names.append(args.ligand_to_screen)
 
