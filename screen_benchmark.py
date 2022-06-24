@@ -43,8 +43,7 @@ from trainer.metrics import Rsquared, MeanPredictorLoss, MAE, PearsonR, RMSD, RM
 # turn on for debugging C code like Segmentation Faults
 import faulthandler
 
-from openeye import oechem
-from openeye import oedocking
+from openeye import oechem, oedocking
 
 from openbabel import openbabel
 
@@ -150,170 +149,182 @@ def screen_ligand(args):
 
     #loop through pdbbind dataset and predict bindings
     for complex in protein_set:
-        #preprocess ligand
-        lig_path = os.path.join('data/PDBBind', complex, f'{complex}_ligand.sdf')
-        if not os.path.exists(lig_path):
-            raise ValueError(f'Path does not exist: {lig_path}')
-        print(f'Trying to load {lig_path}')
-        lig = read_molecule(lig_path, sanitize=True)
-        if lig == None:
-            lig = read_molecule(os.path.join('data/PDBBind', complex, f'{complex}_ligand.mol2'), sanitize=True)
-        if lig != None:  # read mol2 file if sdf file cannot be sanitized
-            used_lig = lig_path
-        if lig == None: raise ValueError(f'The ligand file could not be read')
-        lig_graph = get_lig_graph_revised(lig, lig_path, max_neighbors=dp['lig_max_neighbors'],
-                                                use_rdkit_coords=use_rdkit_coords, radius=dp['lig_graph_radius'])
-        if 'geometry_regularization' in dp and dp['geometry_regularization']:
-            geometry_graph = get_geometry_graph(lig)
-        elif 'geometry_regularization_ring' in dp and dp['geometry_regularization_ring']:
-            geometry_graph = get_geometry_graph_ring(lig)
-        else:
-            geometry_graph = None
-        start_lig_coords = lig_graph.ndata['x']
+        if (args.mode != ''):
+            #preprocess ligand
+            lig_path = os.path.join('data/PDBBind', complex, f'{complex}_ligand.sdf')
+            if not os.path.exists(lig_path):
+                raise ValueError(f'Path does not exist: {lig_path}')
+            print(f'Trying to load {lig_path}')
+            lig = read_molecule(lig_path, sanitize=True)
+            if lig == None:
+                lig = read_molecule(os.path.join('data/PDBBind', complex, f'{complex}_ligand.mol2'), sanitize=True)
+            if lig != None:  # read mol2 file if sdf file cannot be sanitized
+                used_lig = lig_path
+            if lig == None: raise ValueError(f'The ligand file could not be read')
+            lig_graph = get_lig_graph_revised(lig, lig_path, max_neighbors=dp['lig_max_neighbors'],
+                                                    use_rdkit_coords=use_rdkit_coords, radius=dp['lig_graph_radius'])
+            if 'geometry_regularization' in dp and dp['geometry_regularization']:
+                geometry_graph = get_geometry_graph(lig)
+            elif 'geometry_regularization_ring' in dp and dp['geometry_regularization_ring']:
+                geometry_graph = get_geometry_graph_ring(lig)
+            else:
+                geometry_graph = None
+            start_lig_coords = lig_graph.ndata['x']
 
-        rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
-        if (not os.path.exists(rec_path)):
-            print(f'Protein at {rec_path} does not exist')
-            continue
-        print(f'Docking the receptor {complex}\nTo the ligand {used_lig}')
-        rec, rec_coords, c_alpha_coords, n_coords, c_coords = get_receptor_inference(rec_path)
-        rec_graph = get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords,
-                                  use_rec_atoms=dp['use_rec_atoms'], rec_radius=dp['rec_graph_radius'],
-                                  surface_max_neighbors=dp['surface_max_neighbors'],
-                                  surface_graph_cutoff=dp['surface_graph_cutoff'],
-                                  surface_mesh_cutoff=dp['surface_mesh_cutoff'],
-                                  c_alpha_max_neighbors=dp['c_alpha_max_neighbors'])
+            rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
+            if (not os.path.exists(rec_path)):
+                print(f'Protein at {rec_path} does not exist')
+                continue
+            print(f'Docking the receptor {complex}\nTo the ligand {used_lig}')
+            rec, rec_coords, c_alpha_coords, n_coords, c_coords = get_receptor_inference(rec_path)
+            rec_graph = get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords,
+                                    use_rec_atoms=dp['use_rec_atoms'], rec_radius=dp['rec_graph_radius'],
+                                    surface_max_neighbors=dp['surface_max_neighbors'],
+                                    surface_graph_cutoff=dp['surface_graph_cutoff'],
+                                    surface_mesh_cutoff=dp['surface_mesh_cutoff'],
+                                    c_alpha_max_neighbors=dp['c_alpha_max_neighbors'])
 
-        # Randomly rotate and translate the ligand.
-        rot_T, rot_b = random_rotation_translation(translation_distance=5)
-        if (use_rdkit_coords):
-            lig_coords_to_move = lig_graph.ndata['new_x']
-        else:
-            lig_coords_to_move = lig_graph.ndata['x']
-        mean_to_remove = lig_coords_to_move.mean(dim=0, keepdims=True)
-        input_coords = (rot_T @ (lig_coords_to_move - mean_to_remove).T).T + rot_b
-        lig_graph.ndata['new_x'] = input_coords
+            # Randomly rotate and translate the ligand.
+            rot_T, rot_b = random_rotation_translation(translation_distance=5)
+            if (use_rdkit_coords):
+                lig_coords_to_move = lig_graph.ndata['new_x']
+            else:
+                lig_coords_to_move = lig_graph.ndata['x']
+            mean_to_remove = lig_coords_to_move.mean(dim=0, keepdims=True)
+            input_coords = (rot_T @ (lig_coords_to_move - mean_to_remove).T).T + rot_b
+            lig_graph.ndata['new_x'] = input_coords
 
-        if model == None:
-            model = load_model(args, data_sample=(lig_graph, rec_graph), device=device)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            model.to(device)
-            model.eval()
+            if model == None:
+                model = load_model(args, data_sample=(lig_graph, rec_graph), device=device)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.to(device)
+                model.eval()
 
-        with torch.no_grad():
-            geometry_graph = geometry_graph.to(device) if geometry_graph != None else None
-            ligs_coords_pred_untuned, ligs_keypts, recs_keypts, rotations, translations, geom_reg_loss = model(
-                deepcopy(lig_graph.to(device)), rec_graph.to(device), geometry_graph, complex_names=[args.ligand_to_screen], epoch=0)
+            with torch.no_grad():
+                geometry_graph = geometry_graph.to(device) if geometry_graph != None else None
+                ligs_coords_pred_untuned, ligs_keypts, recs_keypts, rotations, translations, geom_reg_loss = model(
+                    deepcopy(lig_graph.to(device)), rec_graph.to(device), geometry_graph, complex_names=[args.ligand_to_screen], epoch=0)
 
-            for lig_coords_pred_untuned, lig_coords, lig_keypts, rec_keypts, rotation, translation in zip(
-                    ligs_coords_pred_untuned, [start_lig_coords], ligs_keypts, recs_keypts, rotations,
-                    translations, ):
-                all_intersection_losses_untuned.append(
-                    compute_revised_intersection_loss(lig_coords_pred_untuned.detach().cpu(), rec_graph.ndata['x'],
-                                                      alpha=0.2, beta=8, aggression=0))
-                all_ligs_coords_pred_untuned.append(lig_coords_pred_untuned.detach().cpu())
-                all_ligs_coords.append(lig_coords.detach().cpu())
-                all_ligs_keypts.append(((rotation @ (lig_keypts).T).T + translation).detach().cpu())
-                all_recs_keypts.append(rec_keypts.detach().cpu())
+                for lig_coords_pred_untuned, lig_coords, lig_keypts, rec_keypts, rotation, translation in zip(
+                        ligs_coords_pred_untuned, [start_lig_coords], ligs_keypts, recs_keypts, rotations,
+                        translations, ):
+                    all_intersection_losses_untuned.append(
+                        compute_revised_intersection_loss(lig_coords_pred_untuned.detach().cpu(), rec_graph.ndata['x'],
+                                                        alpha=0.2, beta=8, aggression=0))
+                    all_ligs_coords_pred_untuned.append(lig_coords_pred_untuned.detach().cpu())
+                    all_ligs_coords.append(lig_coords.detach().cpu())
+                    all_ligs_keypts.append(((rotation @ (lig_keypts).T).T + translation).detach().cpu())
+                    all_recs_keypts.append(rec_keypts.detach().cpu())
 
-            if args.run_corrections:
-                prediction = ligs_coords_pred_untuned[0].detach().cpu()
-                lig_input = deepcopy(lig)
-                conf = lig_input.GetConformer()
-                for i in range(lig_input.GetNumAtoms()):
-                    x, y, z = input_coords.numpy()[i]
-                    conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
-
-                lig_equibind = deepcopy(lig)
-                conf = lig_equibind.GetConformer()
-                for i in range(lig_equibind.GetNumAtoms()):
-                    x, y, z = prediction.numpy()[i]
-                    conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
-
-                coords_pred = lig_equibind.GetConformer().GetPositions()
-
-                Z_pt_cloud = coords_pred
-                rotable_bonds = get_torsions([lig_input])
-                new_dihedrals = np.zeros(len(rotable_bonds))
-                for idx, r in enumerate(rotable_bonds):
-                    new_dihedrals[idx] = get_dihedral_vonMises(lig_input, lig_input.GetConformer(), r, Z_pt_cloud)
-                optimized_mol = apply_changes(lig_input, new_dihedrals, rotable_bonds)
-
-                coords_pred_optimized = optimized_mol.GetConformer().GetPositions()
-                R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_pred.T)
-                coords_pred_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
-                all_ligs_coords_corrected.append(coords_pred_optimized)
-
-                if args.output_directory:
-                    if not os.path.exists(f'{args.output_directory}/screen/{complex}'):
-                        os.makedirs(f'{args.output_directory}/screen/{complex}')
-                    conf = optimized_mol.GetConformer()
-                    for i in range(optimized_mol.GetNumAtoms()):
-                        x, y, z = coords_pred_optimized[i]
+                if args.run_corrections:
+                    prediction = ligs_coords_pred_untuned[0].detach().cpu()
+                    lig_input = deepcopy(lig)
+                    conf = lig_input.GetConformer()
+                    for i in range(lig_input.GetNumAtoms()):
+                        x, y, z = input_coords.numpy()[i]
                         conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
-                    prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf'
 
-                    block_optimized = Chem.MolToMolBlock(optimized_mol)
-                    print(f'Writing prediction to {args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf')
-                    with open(prediction_path, "w") as newfile:
-                        newfile.write(block_optimized)
-                    if (args.mode != 'n'):
-                        obConversion  = openbabel.OBConversion()
-                        obConversion.SetInAndOutFormats('sdf', 'pdbqt')
-                        mol = openbabel.OBMol()
-                        obConversion.ReadFile(mol, prediction_path)
-                        pdbqt_file = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected_ad.pdbqt'
-                        obConversion.WriteFile(mol, pdbqt_file)
-                        autodock_out_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.pdbqt'
+                    lig_equibind = deepcopy(lig)
+                    conf = lig_equibind.GetConformer()
+                    for i in range(lig_equibind.GetNumAtoms()):
+                        x, y, z = prediction.numpy()[i]
+                        conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
 
-                        search_mins = np.min(coords_pred_optimized, axis=0)
-                        search_maxes = np.max(coords_pred_optimized, axis=0)
-                        search_dims = np.add(np.divide(np.subtract(search_maxes, search_mins), 2), [5, 5, 5])
-                        search_center = np.add(search_mins, search_dims)
+                    coords_pred = lig_equibind.GetConformer().GetPositions()
 
-                        #correct with qvina2/smina if mode
-                        if (args.mode == 'q'):
-                            os.system(f'./qvina2.1 --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}')
-                        elif (args.mode == 's'):
-                            os.system(f'./smina.static --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}')
+                    Z_pt_cloud = coords_pred
+                    rotable_bonds = get_torsions([lig_input])
+                    new_dihedrals = np.zeros(len(rotable_bonds))
+                    for idx, r in enumerate(rotable_bonds):
+                        new_dihedrals[idx] = get_dihedral_vonMises(lig_input, lig_input.GetConformer(), r, Z_pt_cloud)
+                    optimized_mol = apply_changes(lig_input, new_dihedrals, rotable_bonds)
 
-                        obConversion.SetInAndOutFormats('pdbqt', 'sdf')
-                        obConversion.ReadFile(mol, autodock_out_path)
-                        prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.sdf'
-                        obConversion.WriteFile(mol, prediction_path)
-                
-                
-                # rescore docking pose and record
-                # get receptor as graph mol(no receptor data)
-                receptor = oechem.OEGraphMol()
-                rec_istream = oechem.oemolistream(rec_path)
-                if not oechem.OEReadPDBFile(rec_istream, receptor):
-                    oechem.OEThrow.Fatal("Unable to read receptor")
-                # get lig as graph mol
-                lig_mol = oechem.OEGraphMol()
-                istream = oechem.oemolistream(prediction_path)
-                if not oechem.OEReadMolecule(istream, lig_mol):
-                    oechem.OEThrow.Fatal("Unable to read ligand")
-                # find bounding box +-some flexibility around ligand
-                lig_coords_list = [[x[0], x[1], x[2]] for x in lig_mol.GetCoords().values()]
-                mins = np.min(lig_coords_list, axis=0)
-                mins -= 0 # angstrom flexibility in bounding box (apparently does not change anything)
-                maxes = np.max(lig_coords_list, axis=0)
-                maxes += 0
-                bounding_box = oedocking.OEBox(*mins, *maxes)
-                # initialize score obj 
-                score = oedocking.OEScore()
-                score.Initialize(receptor, bounding_box)
-                rescore = score.ScoreLigand(lig_mol)
-                rescores.append(rescore)
-                print(rescore)
+                    coords_pred_optimized = optimized_mol.GetConformer().GetPositions()
+                    R, t = rigid_transform_Kabsch_3D(coords_pred_optimized.T, coords_pred.T)
+                    coords_pred_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
+                    all_ligs_coords_corrected.append(coords_pred_optimized)
 
-            f = open('qvina2test.txt', 'w')
-            for score in rescores:
-                f.write(str(score))
-                f.write('\n')
-            f.close()
+                    if args.output_directory:
+                        if not os.path.exists(f'{args.output_directory}/screen/{complex}'):
+                            os.makedirs(f'{args.output_directory}/screen/{complex}')
+                        conf = optimized_mol.GetConformer()
+                        for i in range(optimized_mol.GetNumAtoms()):
+                            x, y, z = coords_pred_optimized[i]
+                            conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+                        prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf'
+
+                        block_optimized = Chem.MolToMolBlock(optimized_mol)
+                        print(f'Writing prediction to {args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected.sdf')
+                        with open(prediction_path, "w") as newfile:
+                            newfile.write(block_optimized)
+                        if (args.mode != 'n'):
+                            obConversion  = openbabel.OBConversion()
+                            obConversion.SetInAndOutFormats('sdf', 'pdbqt')
+                            mol = openbabel.OBMol()
+                            obConversion.ReadFile(mol, prediction_path)
+                            pdbqt_file = f'{args.output_directory}/screen/{complex}/{complex}_lig_equibind_corrected_ad.pdbqt'
+                            obConversion.WriteFile(mol, pdbqt_file)
+                            autodock_out_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.pdbqt'
+
+                            search_mins = np.min(coords_pred_optimized, axis=0)
+                            search_maxes = np.max(coords_pred_optimized, axis=0)
+                            search_dims = np.add(np.divide(np.subtract(search_maxes, search_mins), 2), [5, 5, 5])
+                            search_center = np.add(search_mins, search_dims)
+
+                            #correct with qvina2/smina if mode
+                            if (args.mode == 'q'):
+                                if os.system(f'./qvina2.1 --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}') != 0:
+                                    continue
+                            elif (args.mode == 's'):
+                                if os.system(f'./smina.static --receptor {rec_path} --ligand {pdbqt_file} --center_x {search_center[0]} --center_y {search_center[1]} --center_z {search_center[2]} --size_x {search_dims[0]} --size_y {search_dims[1]} --size_z {search_dims[2]} --out {autodock_out_path}') != 0:
+                                    continue
+
+                            obConversion.SetInAndOutFormats('pdbqt', 'sdf')
+                            obConversion.ReadFile(mol, autodock_out_path)
+                            prediction_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.sdf'
+                            obConversion.WriteFile(mol, prediction_path)
+                    
             all_names.append(args.ligand_to_screen)
+
+        else:
+            # benchmark ground truth run - no equibind
+            rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
+            prediction_path = os.path.join('data/PDBBind', complex, f'{complex}_ligand.sdf')
+        
+        # rescore docking pose and record
+        # get receptor as graph mol(no receptor data)
+        receptor = oechem.OEGraphMol()
+        rec_istream = oechem.oemolistream(rec_path)
+        if not oechem.OEReadPDBFile(rec_istream, receptor):
+            oechem.OEThrow.Fatal("Unable to read receptor")
+        # get lig as graph mol
+        lig_mol = oechem.OEGraphMol()
+        istream = oechem.oemolistream(prediction_path)
+        if not oechem.OEReadMolecule(istream, lig_mol):
+            oechem.OEThrow.Fatal("Unable to read ligand")
+        # create oereceptor within oedesign unit
+        oerec = oechem.OEDesignUnit(receptor, lig_mol)
+        oerecoptions = oedocking.OEMakeReceptorOptions()
+        oedocking.OEMakeReceptor(oerec, oerecoptions)
+
+        # # find bounding box +-some flexibility around ligand
+        # lig_coords_list = [[x[0], x[1], x[2]] for x in lig_mol.GetCoords().values()]
+        # mins = np.min(lig_coords_list, axis=0)
+        # mins -= 0
+        # maxes = np.max(lig_coords_list, axis=0)
+        # maxes += 0
+        # bounding_box = oedocking.OEBox(*mins, *maxes)
+
+        # initialize score obj 
+        score = oedocking.OEScore()
+        score.Initialize(oerec)
+        rescore = score.ScoreLigand(lig_mol)
+        rescores.append((complex, rescore))
+        print(complex, rescore)
+        f = open(f'{args.mode}_rescores.txt', 'a')
+        f.write(f'{str(complex)}: {str(rescore)}\n')
+    f.close()
+
 
     path = os.path.join(os.path.dirname(args.checkpoint), f'predictions_RDKit{use_rdkit_coords}.pt')
     print(f'Saving predictions to {path}')
