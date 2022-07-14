@@ -142,54 +142,42 @@ def screen_ligand(args):
 
     rescores = []
 
-    rmsds = []
-
-    # fpath = 'data/FEPBenchmark'
+    fpath = 'data/CASF-2016/coreset'
     # get screening dataset
-    with open(args.protein_set) as file:
-        lines = file.readlines()
-        protein_set = [line.rstrip() for line in lines]
-    # complex_set = []
-    # for subdir in os.listdir(fpath):
-    #     subpath = os.path.join(fpath, subdir)
-    #     files = os.listdir(subpath)
-    #     for f in files:
-    #         if 'prepared' in f and 'r.pdb' in f:
-    #             protein = os.path.join(subpath, f)
-    #     for f in files:
-    #         if 'ligand' in f:
-    #             c = (protein, os.path.join(subpath, f))
-    #             complex_set.append(c)
+    # with open(args.protein_set) as file:
+    #     lines = file.readlines()
+    #     protein_set = [line.rstrip() for line in lines]
+    complex_set = os.listdir(fpath)
 
 
     # continue where last datapoint processed
-    # if not os.path.exists(f'benchmark_res/{args.mode}_rescores.txt'):
-    #     f = open(f'benchmark_res/{args.mode}_rescores.txt', 'x')
-    # f = open(f'benchmark_res/{args.mode}_rescores.txt', 'r')
-    # l = f.readlines()
-    # if (len(l) > 0):
-    #     # name_arr = l[-1].split(':')[0].split('_')
-    #     # path = name_arr[0] + '/' + name_arr[1]
-    #     # index = next(i for i, (v, *_) in enumerate(complex_set) if v == path) + 1
-    #     index = protein_set.index(l[-1].split(':')[0]) + 1
-    # else:
-    #     index = 0
-    # index = 0
+    if not os.path.exists(f'benchmark_res/{args.mode}_rescores_casf.txt'):
+        f = open(f'benchmark_res/{args.mode}_rescores_casf.txt', 'x')
+    f = open(f'benchmark_res/{args.mode}_rescores_casf.txt', 'r')
+    l = f.readlines()
+    if (len(l) > 0):
+        # name_arr = l[-1].split(':')[0].split('_')
+        # path = name_arr[0] + '/' + name_arr[1]
+        # index = next(i for i, (v, *_) in enumerate(complex_set) if v == path) + 1
+        index = complex_set.index(l[-1].split(':')[0]) + 1
+    else:
+        index = 0
 
     #loop through pdbbind dataset and predict bindings
-    for complex_pair in protein_set:
+    for complex_pair in complex_set[index:]:
         # complex = complex_pair[0].split('/')[-2] + '_' + complex_pair[0].split('/')[-1].split('.')[0] + '_' + complex_pair[1].split('_')[-1].split('.')[0]
         complex = complex_pair
+        print(complex)
         if (args.mode != ''):
             #preprocess ligand
-            lig_path = os.path.join('data/PDBBind', complex, f'{complex}_ligand.sdf')
+            lig_path = os.path.join('data/CASF-2016/coreset', complex, f'{complex}_ligand.sdf')
             # lig_path = complex_pair[1]
             if not os.path.exists(lig_path):
                 raise ValueError(f'Path does not exist: {lig_path}')
             print(f'Trying to load {lig_path}')
             lig = read_molecule(lig_path, sanitize=True)
             if lig == None:
-                lig = read_molecule(os.path.join('data/PDBBind', complex, f'{complex}_ligand.mol2'), sanitize=True)
+                lig = read_molecule(os.path.join('data/CASF-2016/coreset', complex, f'{complex}_ligand.mol2'), sanitize=True)
             if lig != None:  # read mol2 file if sdf file cannot be sanitized
                 used_lig = lig_path
             if lig == None: raise ValueError(f'The ligand file could not be read')
@@ -203,7 +191,7 @@ def screen_ligand(args):
                 geometry_graph = None
             start_lig_coords = lig_graph.ndata['x']
 
-            rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
+            rec_path = os.path.join('data/CASF-2016/coreset', complex, f'{complex}_protein.pdb')
             #  rec_path = complex_pair[0]
             if (not os.path.exists(rec_path)):
                 print(f'Protein at {rec_path} does not exist')
@@ -278,12 +266,6 @@ def screen_ligand(args):
                     coords_pred_optimized = (R @ (coords_pred_optimized).T).T + t.squeeze()
                     all_ligs_coords_corrected.append(coords_pred_optimized)
 
-                    # rmsd calculations for benchmark
-                    coords_native = lig.GetConformer().GetPositions()
-                    rmsd = np.sqrt(np.sum((coords_pred_optimized - coords_native) ** 2, axis=1).mean())
-                    print(rmsd)
-                    rmsds.append((complex, rmsd))
-
                     if args.output_directory:
                         if not os.path.exists(f'{args.output_directory}/screen/{complex}'):
                             os.makedirs(f'{args.output_directory}/screen/{complex}')
@@ -307,6 +289,13 @@ def screen_ligand(args):
                             obConversion.WriteFile(mol, pdbqt_file)
                             autodock_out_path = f'{args.output_directory}/screen/{complex}/{complex}_lig_autodock_corrected.pdbqt'
 
+                            # #convert protein to pdbqt
+                            # obConversion.SetInAndOutFormats('pdb', 'pdbqt')
+                            # mol = openbabel.OBMol()
+                            # obConversion.ReadFile(mol, rec_path)
+                            # pdbqt_file_protein = f'{args.output_directory}/screen/{complex}/{complex}_protein_ad.pdbqt'
+                            # obConversion.WriteFile(mol, pdbqt_file_protein)
+
                             search_mins = np.min(coords_pred_optimized, axis=0)
                             search_maxes = np.max(coords_pred_optimized, axis=0)
                             search_dims = np.add(np.divide(np.subtract(search_maxes, search_mins), 2), [5, 5, 5])
@@ -329,8 +318,8 @@ def screen_ligand(args):
 
         else:
             # benchmark ground truth run - no equibind
-            rec_path = os.path.join('data/PDBBind', complex, f'{complex}_protein_processed.pdb')
-            prediction_path = os.path.join('data/PDBBind', complex, f'{complex}_ligand.sdf')
+            rec_path = os.path.join('data/CASF-2016/coreset', complex, f'{complex}_protein.pdb')
+            prediction_path = os.path.join('data/CASF-2016/coreset', complex, f'{complex}_ligand.sdf')
             # rec_path = complex_pair[0]
             # prediction_path = complex_pair[1]
         
@@ -356,17 +345,11 @@ def screen_ligand(args):
         rescore = score.ScoreLigand(lig_mol)
         rescores.append((complex, rescore))
         print(complex, rescore)
-        # if not os.path.exists(f'benchmark_res/{args.mode}_rescores_fep.txt'):
-        #     f = open(f'benchmark_res/{args.mode}_rescores_fep.txt', 'x')
-        # f = open(f'benchmark_res/{args.mode}_rescores_fep.txt', 'a')
-        # f.write(f'{str(complex)}: {str(rescore)}\n')
-        # f.close()
-    
-    rmsd_rescores = zip(rmsds, rescores)
-    f = open('benchmark_res/rmsd_labeled.txt', 'w')
-    for r in rmsd_rescores:
-        f.write(f'{str(r[0][0])} {str(r[0][1])} {str(r[1][1])}\n')
-    f.close()
+        if not os.path.exists(f'benchmark_res/{args.mode}_rescores_casf.txt'):
+            f = open(f'benchmark_res/{args.mode}_rescores_casf.txt', 'x')
+        f = open(f'benchmark_res/{args.mode}_rescores_casf.txt', 'a')
+        f.write(f'{str(complex)}: {str(rescore)}\n')
+        f.close()
 
 
     path = os.path.join(os.path.dirname(args.checkpoint), f'predictions_RDKit{use_rdkit_coords}.pt')

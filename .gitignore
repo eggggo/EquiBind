@@ -146,3 +146,7 @@ runs2
 
 oe_license.txt
 poscomplex
+*.oedu
+*.txt
+*.pdbqt
+*.oeb

@@ -4,7 +4,7 @@ ligand_to_screen: 'data/PDBBind/1a0q/1a0q_ligand.sdf' # this should be your inpu
 protein_set: 'data/timesplit_test'
 mode: '' # empty - none, n - normal, q - qvina2 correcting, s - smina correcting
 
-test_names: timesplit_test
+test_names: timesplit_test # test file that lists pdbbind complexes to be tested on(may need to expand for other databases as well)
 output_directory: 'data/results/output' # the predicted ligands will be saved as .sdf file here
 run_corrections: True
 use_rdkit_coords: False # generates the coordinates of the ligand with rdkit instead of using the provided conformer. If you already have a 3D structure that you want to use as initial conformer, then leave this as False

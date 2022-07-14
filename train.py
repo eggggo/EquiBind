@@ -13,7 +13,7 @@ from datasets.samplers import HardSampler
 from trainer.binding_trainer import BindingTrainer
 
 
-from datasets.pdbbind import PDBBind
+from datasets.pdbbind_lazy import PDBBind_Lazy
 
 from commons.utils import seed_all, get_random_indices, log
 
@@ -166,8 +166,8 @@ def train(args, run_dir):
                     'mean_predictor_loss': MeanPredictorLoss(globals()[args.loss_func](**args.loss_params)),
                     }
 
-    train_data = PDBBind(device=device, complex_names_path=args.train_names,lig_predictions_name=args.train_predictions_name, is_train_data=True, **args.dataset_params)
-    val_data = PDBBind(device=device, complex_names_path=args.val_names,lig_predictions_name=args.val_predictions_name, **args.dataset_params)
+    train_data = PDBBind_Lazy(device=device, complex_names_path=args.train_names,lig_predictions_name=args.train_predictions_name, is_train_data=True, **args.dataset_params)
+    val_data = PDBBind_Lazy(device=device, complex_names_path=args.val_names,lig_predictions_name=args.val_predictions_name, **args.dataset_params)
 
     if args.num_train != None:
         train_data = Subset(train_data, get_random_indices(len(train_data))[:args.num_train])
@@ -197,7 +197,7 @@ def train(args, run_dir):
                           sampler=sampler)
     val_metrics, _, _ = trainer.train(train_loader, val_loader)
     if args.eval_on_test:
-        test_data = PDBBind(device=device, complex_names_path=args.test_names, **args.dataset_params)
+        test_data = PDBBind_Lazy(device=device, complex_names_path=args.test_names, **args.dataset_params)
         test_loader = DataLoader(test_data, batch_size=args.batch_size, collate_fn=collate_function,
                                  pin_memory=args.pin_memory, num_workers=args.num_workers)
         log('test size: ', len(test_data))
