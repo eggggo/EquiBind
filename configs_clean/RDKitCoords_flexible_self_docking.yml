@@ -22,8 +22,8 @@ loss_params:
   kabsch_rmsd_weight: 1
 
 
-train_names: 'data/timesplit_no_lig_overlap_train'
-val_names: 'data/timesplit_no_lig_overlap_val'
+train_names: 'data/timesplit_no_lig_overlap_val'
+val_names: 'data/timesplit_test'
 test_names: 'data/timesplit_test'
 num_workers: 0
 dataset_params:

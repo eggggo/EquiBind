@@ -1,4 +1,4 @@
-name: equibind
+name: equibind2
 channels:
   - conda-forge
   - defaults

@@ -300,9 +300,16 @@ def screen_ligand(args):
                 score = oedocking.OEScore()
                 score.Initialize(receptor, bounding_box)
                 rescore = score.ScoreLigand(lig_mol)
-                print(rescore)
+                rescores.append([complex, rescore])
+                print(f'score on receptor {complex}: {rescore}')
 
-            all_names.append(args.ligand_to_screen)
+    all_names.append(args.ligand_to_screen)
+
+    scores_path = f'{args.ligand_to_screen}_{args.protein_set}_scores.txt'
+    f = open(scores_path, 'w+')
+    for r in rescores:
+        f.write(f'{r[0]}: {str(r[1])}')
+    f.close()
 
     path = os.path.join(os.path.dirname(args.checkpoint), f'predictions_RDKit{use_rdkit_coords}.pt')
     print(f'Saving predictions to {path}')

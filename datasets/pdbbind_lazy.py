@@ -128,18 +128,16 @@ class PDBBind_Lazy(Dataset):
         return len(self.complex_names)
 
     def __getitem__(self, idx):
-        print(idx)
-        print(len(self.complex_names))
         complex = self.complex_names[idx]
         # read from file if exists, otherwise process first
-        if (not os.path.exists(f'{complex}_pocket_and_rec_coords.pt') 
-        or (not os.path.exists(f'{complex}_lig_structure_graphs.pt') and self.lig_structure_graph) 
-        or (not os.path.exists(f'{complex}_lig_graph.pt')) 
-        or (not os.path.exists(f'{complex}_rec_graphs.pt')) 
-        or (self.rec_subgraph and not os.path.exists(f'{complex}_rec_subgraph.pt')) 
-        or (self.lig_structure_graph and not os.path.exists(f'{complex}_torsion_masks_and_angles.pt')) 
-        or (self.geometry_regularization and not os.path.exists(f'{complex}_geometry_regularization.pt')) 
-        or (self.geometry_regularization_ring and not os.path.exists(f'{complex}_geometry_regularization_ring.pt'))):
+        if (not os.path.exists(os.path.join(self.processed_dir, f'{complex}_pocket_and_rec_coords.pt')) 
+        or (not os.path.exists(os.path.join(self.processed_dir, f'{complex}_lig_structure_graphs.pt')) and self.lig_structure_graph) 
+        or (not os.path.exists(os.path.join(self.processed_dir, f'{complex}_lig_graph.pt'))) 
+        or (not os.path.exists(os.path.join(self.processed_dir, f'{complex}_rec_graphs.pt'))) 
+        or (self.rec_subgraph and not os.path.exists(os.path.join(self.processed_dir, f'{complex}_rec_subgraph.pt'))) 
+        or (self.lig_structure_graph and not os.path.exists(os.path.join(self.processed_dir, f'{complex}_torsion_masks_and_angles.pt'))) 
+        or (self.geometry_regularization and not os.path.exists(os.path.join(self.processed_dir, f'{complex}_geometry_regularization.pt'))) 
+        or (self.geometry_regularization_ring and not os.path.exists(os.path.join(self.processed_dir, f'{complex}_geometry_regularization_ring.pt')))):
             while not self.process(complex): # if it fails we delete the lig from set and process a new one at that index
                 print(f'{complex} errored')
                 self.complex_names.remove(complex)
@@ -171,11 +169,9 @@ class PDBBind_Lazy(Dataset):
             angles = masks_angles['angles']
             masks = masks_angles['masks']
         if self.geometry_regularization:
-            print(os.path.join(self.processed_dir, 'geometry_regularization.pt'))
             geometry_graph, _ =  load_graphs(os.path.join(self.processed_dir, f'{complex}_geometry_regularization.pt'))
             geometry_graph = geometry_graph[0]
         if self.geometry_regularization_ring:
-            print(os.path.join(self.processed_dir, 'geometry_regularization_ring.pt'))
             geometry_graph, _ =  load_graphs(os.path.join(self.processed_dir, f'{complex}_geometry_regularization_ring.pt'))
             geometry_graph = geometry_graph[0]
 
