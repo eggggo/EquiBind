@@ -108,6 +108,12 @@ failed.txt - contains the index (in the file ligands.sdf) and name of every mole
 success.txt - contains the index (in the file ligands.sdf) and name of every molecule for which inference succeeded.\
 output.sdf - contains the conformers produced by EquiBind in .sdf format.
 
+# (Reverse?) Screening ligand against a PDBBind protein dataset
+
+    python screen.py --config=configs_clean/screen.yml
+
+The PDBBind receptor set and ligand to be screened against the set are specified in the screen.yml config file.
+
 
 
 # Reproducing paper numbers
